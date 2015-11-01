@@ -6,6 +6,8 @@
 var PdfPrinter = require('../printer');
 var FileSaver = require('../../libs/FileSaver.js/FileSaver');
 var saveAs = FileSaver.saveAs;
+var work = require('webworkify');
+var documentWorker = require('./documentWorker.js');
 
 var defaultClientFonts = {
 	Roboto: {
@@ -22,22 +24,29 @@ function Document(docDefinition, fonts, vfs) {
 	this.vfs = vfs;
 }
 
+
+Document.prototype._getDocResult = function(printer,options,callback){
+
+	var worker = work(documentWorker);
+	worker.addEventListener('message', function (ev) {
+		var callbackArgs = ev.data;
+		callback.apply(null,callbackArgs)
+	});
+
+	worker.postMessage({
+		printer:printer,
+		options:options
+	}); // send the worker data
+
+
+
+};
+
 Document.prototype._createDoc = function(options, callback) {
 	var printer = new PdfPrinter(this.fonts);
 	printer.fs.bindFS(this.vfs);
+	this._getDocResult(printer,options,callback);
 
-	var doc = printer.createPdfKitDocument(this.docDefinition, options);
-	var chunks = [];
-	var result;
-
-	doc.on('data', function(chunk) {
-		chunks.push(chunk);
-	});
-	doc.on('end', function() {
-		result = Buffer.concat(chunks);
-		callback(result, doc._pdfMakePages);
-	});
-	doc.end();
 };
 
 Document.prototype._getPages = function(options, cb){
@@ -94,7 +103,7 @@ Document.prototype.download = function(defaultFileName, cb) {
            blob = new Blob([result], { type: 'application/pdf' });
        }
        catch (e) {
-           // Old browser which can't handle it without making it an byte array (ie10) 
+           // Old browser which can't handle it without making it an byte array (ie10)
            if (e.name == "InvalidStateError") {
                var byteArray = new Uint8Array(result);
                blob = new Blob([byteArray.buffer], { type: 'application/pdf' });
